@@ -8,28 +8,68 @@
 File myFile;
 File root;
 
+#define ACK 1
+#define ENCRYPT 2
+
 
 const int chipSelect = 10;
+
+String convertToString(char* a, int size) 
+{ 
+    int i; 
+    String s = ""; 
+    for (i = 0; i < size; i++) { 
+        s = s + a[i]; 
+    } 
+    return s; 
+} 
+
+void handle_encrypt() {
+    
+    //Get they key for decrypting, will need to be reinterpreted.
+    char _key[16];
+    Serial.readBytes(_key, 16);
+
+    //Get the length of the file then convert it to an int
+    char _fileName_length[1];
+    Serial.readBytes(_fileName_length, 1);
+    int fileName_length = _fileName_length[0];
+
+    //Get the file
+    char _fileName[fileName_length];
+    Serial.readBytes(_fileName, 8);
+
+    //Buffer is empties, send Ack so it will start sending the file
+    Serial.write(ACK);
+
+    //convert to uint8_t
+    uint8_t key[16];
+    memcpy(key, _key, 16);
+
+    //convert the bytes to a string
+    String fileName = convertToString(_fileName, fileName_length);
+    Serial.print(fileName);
+    
+}
+
 
 void read_buffer() {
 
   char header[1];
-  char size[1];
 
   digitalWrite(13, HIGH);
   while(Serial.available() == 0);
   digitalWrite(13, LOW);
   Serial.readBytes(header, 1);
 
-  if(header[0] == 2) {
-    digitalWrite(13, LOW);
-    Serial.readBytes(size, 1);
-    char buffer[size[0]];
-    Serial.readBytes(buffer, size[0]);
+  switch (header[0]) 
+  {
 
-    Serial.write(1);
+    case ENCRYPT: 
+      handle_encrypt(); 
+      break;
+
   }
-
 }
 
 void encrypt_file(uint8_t key[16], File * file_in, File * file_out) {

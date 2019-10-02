@@ -25,13 +25,16 @@ impl FileBuffer {
 
     pub fn encrypt_start_buffer(&self)-> Vec<u8> {
         let mut buffer = Vec::new();
-        let total_size: u8 = 16 + self.filename.len() as u8;
+        let filename_size: u8 = self.filename.len() as u8;
+        println!("{}", filename_size);
 
         buffer.write_u8(ENCRYPT_HEADER);
-        buffer.write_u8(total_size);
         buffer.write_all(&self.key);
-        buffer.write_all(self.filename.as_bytes());
 
+        buffer.write_u8(filename_size);
+        println!("{:?}", buffer);
+        buffer.write_all(self.filename.as_bytes());
+        println!("{:?}", buffer);
         return buffer;
     }
 
@@ -41,5 +44,5 @@ impl FileBuffer {
     //Normally we would send a header_id, but since it would mean we couldn't send an entire block
     //We will not send a header id, and when the arduino receives the encrypt_start_buffer,
     //The hardware will just assume the next bytes coming in contain the file.
-    pub fn encrypt_file_buffer()-> Vec<u8>
+    //pub fn encrypt_file_buffer()-> Vec<u8>
 }
