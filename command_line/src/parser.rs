@@ -1,4 +1,3 @@
-use bytes::{BytesMut, BufMut};
 use byteorder::WriteBytesExt;
 use std::io::Write;
 
@@ -6,17 +5,17 @@ const ACK:            u8 = 1;
 const ENCRYPT_HEADER: u8 = 2;
 const ENCRYPT_FILE:   u8 = 3;
 
-pub struct FileBuffer{
+pub struct Message{
     filename: String,
     key: [u8; 16],
     buffer: Vec<u8>
 }
 
 
-impl FileBuffer {
-    pub fn new(filename: String, key: [u8; 16], buffer: Vec<u8>)->FileBuffer {
+impl Message {
+    pub fn new(filename: String, key: [u8; 16], buffer: Vec<u8>)->Message {
 
-        return FileBuffer{
+        return Message{
             filename,
             key,
             buffer
@@ -36,6 +35,22 @@ impl FileBuffer {
         buffer.write_all(self.filename.as_bytes());
         println!("{:?}", buffer);
         return buffer;
+    }
+
+    //Returns true if buffer is not empty
+    //Returns false if the buffer is empty
+    pub fn drain_buffer(&mut self, bytes: usize, buf: &mut Vec<u8>) ->bool {
+
+        if self.buffer.len() > bytes {
+            let x: Vec<u8> = self.buffer.drain(..bytes).collect();
+            buf.clone_from(&x);
+            return true;
+        }
+        else {
+            let x: Vec<u8> = self.buffer.drain(..self.buffer.len()).collect();
+            buf.clone_from(&x);
+            return false;
+        }
     }
 
     //Unfortunatly the Serial buffer is only 64Bytes in arduino

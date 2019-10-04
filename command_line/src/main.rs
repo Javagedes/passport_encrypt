@@ -1,12 +1,6 @@
-use serialport::{available_ports, open, SerialPortSettings, SerialPort};
-use std::io::{Read, Write, Cursor};
-use serialport::windows::COMPort;
-use std::thread::sleep;
-use std::time::Duration;
-use bytes::{BytesMut, BufMut};
+use std::io::{Read, Write};
 use std::fs::File;
-use crate::parser::{FileBuffer};
-use serialport::ClearBuffer::All;
+use crate::parser::{Message};
 use byteorder::ReadBytesExt;
 
 mod parser;
@@ -36,7 +30,7 @@ fn main() {
         12, 13, 14, 15
     ];
 
-    let obj = FileBuffer::new(filename, key, buffer);
+    let mut obj = Message::new(filename, key, buffer);
 
     port.write(&obj.encrypt_start_buffer());
 
@@ -64,4 +58,10 @@ fn main() {
     println!("{}", mystr);
     // let z: Vec<_> = buffer.drain(..len as usize).collect();
 
+    let mut buffer = Vec::new();
+
+    while obj.drain_buffer(64, &mut buffer) {
+        println!("Keep on draining the buffer!");
+    }
+    println!("The buffer is now empty!");
 }
