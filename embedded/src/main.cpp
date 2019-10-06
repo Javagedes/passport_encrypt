@@ -5,19 +5,16 @@
 #include "encrypt.h"
 #include "decrypt.h"
 
-File myFile;
-File root;
+#define ACK 1
+#define END 2 //May not use this
+#define RECEIVE_FILE 3
+#define SEND_FILE 4
+
 SdFat SD;
-uint8_t buffer[1024];
-
-const uint8_t ACK = 1;
-#define ENCRYPT 3
-
 
 const int chipSelect = 10;
 
-String convertToString(char* a, int size) 
-{ 
+String convertToString(char* a, int size) { 
     int i; 
     String s = ""; 
     for (i = 0; i < size; i++) { 
@@ -26,83 +23,108 @@ String convertToString(char* a, int size)
     return s; 
 } 
 
-void handle_encrypt() {
+void send_handler() {}
+
+void receive_handler() {
     
-    //Get they key for decrypting, will need to be reinterpreted.
+    //Read the key for encryption/decryption as char array
     char _key[16];
     Serial.readBytes(_key, 16);
 
-    char _len[4];
-    Serial.readBytes(_len, 4);
+    //Read the file length as a char array. Each byte must be read into the int.
+    char _file_length[4];
+    Serial.readBytes(_file_length, 4);
 
-    const uint8_t b0 = _len[0], b1 = _len[1], b2 = _len[2], b3 = _len[3];
-
-    int len = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
-    
-
-    //Get the length of the file then convert it to an int
+    //Read the fileName length. Filename can only be 255bits
     char _fileName_length[1];
     Serial.readBytes(_fileName_length, 1);
     int fileName_length = _fileName_length[0];
 
-    //Get the file
+    //Read in the filename as a char array. Will convert to String
     char _fileName[fileName_length];
     Serial.readBytes(_fileName, fileName_length);
 
-    String fileName = convertToString(_fileName, fileName_length);
-
-    //Buffer is empties, send Ack so it will start sending the file
-    //TODO: clean up when ACK is written. need to read everything out, ACK, then do all the math.
+    //Read all of the information from the buffer
+    //Send and ACK before doing any computation
+    //This gives more time for the ACK to get sent, and the PC to respond-
+    // This means less time this is possibly sitting idle
     Serial.write(ACK);
 
-    myFile = SD.open(fileName, O_CREAT | O_WRITE | O_APPEND);
+    //Each of the 4 bytes for converting _file_length to an 32bit int
+    const uint8_t b0 = _file_length[0],
+                  b1 = _file_length[1], 
+                  b2 = _file_length[2], 
+                  b3 = _file_length[3];
+    int file_length = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+
+    String fileName = convertToString(_fileName, fileName_length); 
+
+    //Open the file and wait until it is ready.
+    //TODO: Look to see if file already exists. delete it if it does? Not sure yet on that functionality
+    File myFile = SD.open(fileName, O_CREAT | O_WRITE | O_APPEND);
     while(!myFile);
 
-    //convert to uint8_t
+    //convert the char array for key into a uint8_t array.
+    //Doesn't do much but AES encryption algorithm expects uint8_t
     uint8_t key[16];
     memcpy(key, _key, 16);
-    while( len - 64 >= 0) {
-      len = len - 64;
-      char buffer[64];
+
+    //Can reuse buffer without reinitializing as we will always overwrite the entire 64 bytes
+    //EXCEPT for when file_length < 64, but even then we only write the correct amount of the
+    // buffer into the file as seen in the below section
+    char buffer[64];
+    while( file_length - 64 >= 0) {
+      file_length -= 64;
+      
       Serial.readBytes(buffer,64);
       Serial.write(ACK);
       myFile.write(buffer, 64);
       myFile.flush();
     }
 
-    if(len != 0){
-      char buffer[len];
-      Serial.readBytes(buffer, len);
+    //Once the file is less than 64, do the same thing as above
+    // but only with the specific amount of bytes
+    //Also need to make sure the file_length is not zero,
+    //If it is zero, then none of this is necessary
+    if(file_length != 0){
+      Serial.readBytes(buffer, file_length);
       Serial.write(ACK);
-      myFile.write(buffer, len);
-      myFile.flush();
+      myFile.write(buffer, file_length);
+      
+      //Flush to send the bytes to the SD. This could be made better as
+      //It flushes every 64 bytes, but the buffer can hold 512 bytes
+      //Flushing is slow so would be worth it to wait to flush
+      //TODO: Only flush once buffer is full (512 bytes);
+      myFile.flush(); 
     }
-
-
-    myFile.close();
-    
+    myFile.close();  
 }
 
+void request_handler() {
 
-void read_buffer() {
+  char request_header[1];
 
-  char header[1];
-
-  
+  //Wait until their is data in the Serial buffer
   while(Serial.available() == 0);
-  Serial.readBytes(header, 1);
 
-  switch (header[0]) 
+  //Read the first byte of the buffer (the header)
+  //Act on the specific request
+  Serial.readBytes(request_header, 1);
+  switch (request_header[0]) 
   {
-
-    case ENCRYPT:
-      handle_encrypt(); 
+    //If the PC is sending a file to the teensy
+    case RECEIVE_FILE:
+      receive_handler(); 
       break;
 
+    //If the PC is requesting a file from the teensy
+    case SEND_FILE:
+      send_handler();
+      break;
   }
 }
 
-void encrypt_file(uint8_t key[16], File * file_in, File * file_out) {
+/*void encrypt_file(uint8_t key[16], File * file_in, File * file_out) {
   Serial.print("Starting Encrypt Function...");
   uint32_t count = file_in->size();
   Serial.print("Size: "); Serial.println(count);
@@ -191,26 +213,13 @@ void decrypt_file(uint8_t key[16], File * file_in, File * file_out) {
     }
     file_out->flush();
   }
-}
-
-
-
-uint8_t key[16] = {
-    1, 2, 3, 4,
-    5, 6, 7, 8,
-    9, 0, 1, 2,
-    3, 4, 5, 6
-  };
-
+}*/
 
 void setup() {
   
   Serial.begin(9600);
   while (!Serial);
-
-  if (!SD.begin(chipSelect, SD_SCK_MHZ(50))) {
-    return;
-  }
+  if (!SD.begin(chipSelect, SD_SCK_MHZ(50))) { return; }
   
 }
 /*void setup() {
@@ -256,8 +265,7 @@ void setup() {
 
 void loop() {
  
- read_buffer();
-  
+ request_handler(); 
 
 }
 
