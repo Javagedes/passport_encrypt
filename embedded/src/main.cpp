@@ -7,9 +7,11 @@
 
 File myFile;
 File root;
+SdFat SD;
+uint8_t buffer[1024];
 
-#define ACK 1
-#define ENCRYPT 2
+const uint8_t ACK = 1;
+#define ENCRYPT 3
 
 
 const int chipSelect = 10;
@@ -30,6 +32,14 @@ void handle_encrypt() {
     char _key[16];
     Serial.readBytes(_key, 16);
 
+    char _len[4];
+    Serial.readBytes(_len, 4);
+
+    const uint8_t b0 = _len[0], b1 = _len[1], b2 = _len[2], b3 = _len[3];
+
+    int len = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+    
+
     //Get the length of the file then convert it to an int
     char _fileName_length[1];
     Serial.readBytes(_fileName_length, 1);
@@ -37,18 +47,39 @@ void handle_encrypt() {
 
     //Get the file
     char _fileName[fileName_length];
-    Serial.readBytes(_fileName, 8);
+    Serial.readBytes(_fileName, fileName_length);
+
+    String fileName = convertToString(_fileName, fileName_length);
 
     //Buffer is empties, send Ack so it will start sending the file
+    //TODO: clean up when ACK is written. need to read everything out, ACK, then do all the math.
     Serial.write(ACK);
+
+    myFile = SD.open(fileName, O_CREAT | O_WRITE | O_APPEND);
+    while(!myFile);
 
     //convert to uint8_t
     uint8_t key[16];
     memcpy(key, _key, 16);
+    while( len - 64 >= 0) {
+      len = len - 64;
+      char buffer[64];
+      Serial.readBytes(buffer,64);
+      Serial.write(ACK);
+      myFile.write(buffer, 64);
+      myFile.flush();
+    }
 
-    //convert the bytes to a string
-    String fileName = convertToString(_fileName, fileName_length);
-    Serial.print(fileName);
+    if(len != 0){
+      char buffer[len];
+      Serial.readBytes(buffer, len);
+      Serial.write(ACK);
+      myFile.write(buffer, len);
+      myFile.flush();
+    }
+
+
+    myFile.close();
     
 }
 
@@ -57,15 +88,14 @@ void read_buffer() {
 
   char header[1];
 
-  digitalWrite(13, HIGH);
+  
   while(Serial.available() == 0);
-  digitalWrite(13, LOW);
   Serial.readBytes(header, 1);
 
   switch (header[0]) 
   {
 
-    case ENCRYPT: 
+    case ENCRYPT:
       handle_encrypt(); 
       break;
 
@@ -163,8 +193,7 @@ void decrypt_file(uint8_t key[16], File * file_in, File * file_out) {
   }
 }
 
-SdFat SD;
-uint8_t buffer[1024];
+
 
 uint8_t key[16] = {
     1, 2, 3, 4,
@@ -176,9 +205,12 @@ uint8_t key[16] = {
 
 void setup() {
   
-  pinMode(13, OUTPUT);
   Serial.begin(9600);
   while (!Serial);
+
+  if (!SD.begin(chipSelect, SD_SCK_MHZ(50))) {
+    return;
+  }
   
 }
 /*void setup() {

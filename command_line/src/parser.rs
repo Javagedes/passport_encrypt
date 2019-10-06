@@ -1,9 +1,11 @@
-use byteorder::WriteBytesExt;
-use std::io::Write;
+use byteorder::{WriteBytesExt, LittleEndian, BigEndian};
+use std::io::{Write, Read};
+use std::fs::File;
 
-const ACK:            u8 = 1;
-const ENCRYPT_HEADER: u8 = 2;
-const ENCRYPT_FILE:   u8 = 3;
+pub const ACK:        u8 = 1;
+pub const END:        u8 = 2;
+const SEND_FILE:      u8 = 3;
+const REQUEST_FILE:   u8 = 4;
 
 pub struct Message{
     filename: String,
@@ -13,32 +15,45 @@ pub struct Message{
 
 
 impl Message {
-    pub fn new(filename: String, key: [u8; 16], buffer: Vec<u8>)->Message {
+    pub fn new(filename: String, password: String)->Message {
+        let mut file = File::open(&filename).unwrap();
+        let mut buffer = Vec::new();
 
-        return Message{
+        //TODO: Do some magic to turn a password into a key!
+        let key: [u8; 16] = [
+            0, 1, 2, 3,
+            4, 5, 6, 7,
+            8, 9, 10, 11,
+            12, 13, 14, 15
+        ];
+
+        file.read_to_end(&mut buffer);
+
+        return Message {
             filename,
             key,
             buffer
-        };
+        }
     }
 
-    pub fn encrypt_start_buffer(&self)-> Vec<u8> {
-        let mut buffer = Vec::new();
+    //Clears the buffer first, for reuse.
+    //Creates the header buffer to be send to hardware to signify that it will be
+    //sending the file buffer next.
+    pub fn file_send_header(&self, buf: &mut Vec<u8>)-> bool {
         let filename_size: u8 = self.filename.len() as u8;
-        println!("{}", filename_size);
+        buf.clear();
 
-        buffer.write_u8(ENCRYPT_HEADER);
-        buffer.write_all(&self.key);
-
-        buffer.write_u8(filename_size);
-        println!("{:?}", buffer);
-        buffer.write_all(self.filename.as_bytes());
-        println!("{:?}", buffer);
-        return buffer;
+        buf.write_u8(SEND_FILE);
+        buf.write_all(&self.key);
+        buf.write_u32::<BigEndian>(self.buffer.len() as u32);
+        buf.write_u8(filename_size);
+        buf.write_all(self.filename.as_bytes());
+        return true;
     }
 
     //Returns true if buffer is not empty
     //Returns false if the buffer is empty
+    //
     pub fn drain_buffer(&mut self, bytes: usize, buf: &mut Vec<u8>) ->bool {
 
         if self.buffer.len() > bytes {

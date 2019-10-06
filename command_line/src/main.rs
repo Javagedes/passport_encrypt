@@ -1,9 +1,25 @@
 use std::io::{Read, Write};
 use std::fs::File;
-use crate::parser::{Message};
-use byteorder::ReadBytesExt;
+use crate::parser::{Message, ACK, END};
+use byteorder::{ReadBytesExt, WriteBytesExt};
+use serialport::{SerialPortSettings, SerialPort};
 
 mod parser;
+
+trait Ack {
+    fn ack(&mut self)->bool;
+}
+
+impl Ack for Box<dyn SerialPort> {
+    //Waits until there is something to read.
+    fn ack(&mut self)->bool {
+        while self.bytes_to_read().unwrap() == 0 {};
+        let response = self.read_u8().unwrap();
+
+        if response == ACK { return true }
+        else { return false }
+    }
+}
 
 fn main() {
     println!("Hello, world!");
@@ -19,49 +35,29 @@ fn main() {
     port.write_data_terminal_ready(true);
 
     let filename = String::from("pest.txt");
-    let mut file = File::open(&filename).unwrap();
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer);
+    let password: String = String::from("password");
 
-    let key: [u8; 16] = [
-        0, 1, 2, 3,
-        4, 5, 6, 7,
-        8, 9, 10, 11,
-        12, 13, 14, 15
-    ];
+    let mut obj = Message::new(filename, password);
 
-    let mut obj = Message::new(filename, key, buffer);
+    let mut buffer: Vec<u8> = Vec::new();
 
-    port.write(&obj.encrypt_start_buffer());
-
-    let mut response:u8 = 0;
-    println!("Waiting to read...");
-    while port.bytes_to_read().unwrap() == 0 {};
-    response = port.read_u8().unwrap();
-    if response == 1 {
-        println!("Message acknowledged");
+    obj.file_send_header(&mut buffer);
+    port.write(&mut buffer);
+    if !port.ack()
+    {
+        println!("Failed Ack @ write header");
     }
-    else {
-        println!("Not Acknowledged");
+    while obj.drain_buffer(64, &mut buffer ) {
+        port.write_all(&mut buffer);
+        if !port.ack() {
+            println!("Failed Ack @ write buffer");
+        }
     }
+    port.write_all(&mut buffer);
+    port.write_u8(END);
+    println!("File should be written to sd...");
 
-    //let mut buffer = Vec::new();
-    let mut size = 0;
-    while port.bytes_to_read().unwrap() == 0 {};
-    //size = port.bytes_to_read().unwrap();
-    //println!("{:?}", buffer);
-    //println!("{}", size);
 
-    //let mut buffer = Vec::new();
-    let mut mystr = String::new();
-    port.read_to_string(&mut mystr);
-    println!("{}", mystr);
-    // let z: Vec<_> = buffer.drain(..len as usize).collect();
 
-    let mut buffer = Vec::new();
 
-    while obj.drain_buffer(64, &mut buffer) {
-        println!("Keep on draining the buffer!");
-    }
-    println!("The buffer is now empty!");
 }
