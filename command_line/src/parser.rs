@@ -1,4 +1,4 @@
-use byteorder::{WriteBytesExt, LittleEndian, BigEndian};
+use byteorder::{WriteBytesExt, BigEndian};
 use std::io::{Write, Read};
 use std::fs::File;
 

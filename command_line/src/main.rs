@@ -1,8 +1,8 @@
-use std::io::{Read, Write};
-use std::fs::File;
-use crate::parser::{Message, ACK, END};
-use byteorder::{ReadBytesExt, WriteBytesExt};
-use serialport::{SerialPortSettings, SerialPort};
+use std::io::Write;
+use crate::parser::{Message, ACK};
+use byteorder::ReadBytesExt;
+use serialport::SerialPort;
+use std::env;
 
 mod parser;
 
@@ -21,8 +21,59 @@ impl Ack for Box<dyn SerialPort> {
     }
 }
 
+//TODO get file from SD card
+fn get_handler() {}
+
+//Puts a file on the SD card
+//TODO require password. send password to device, hash it and see if it matches. If it matches, device will send an OK and pc will start sending the file buffer over
+fn put_handler(filename: String) {
+    //Open the port then let the serial port know we are ready to write data;
+    //TODO handle dynamically finding the port
+    let mut port = serialport::open("COM3").unwrap();
+    port.write_data_terminal_ready(true);
+
+    //TODO get password from the user
+    //TODO Send password over the wire for verification
+    let password: String = String::from("password");
+
+    //Create the Message we will be sending
+    //This object provides multiple methods to make sending the message easier
+    //TODO the methods a trait rather than special to object. will need more objects that do basically the same thing, except for receiving data, setting password, etc
+    let mut obj = Message::new(filename, password);
+    let mut buffer: Vec<u8> = Vec::new();
+
+    //Create the header message, send it, wait for an Ack
+    obj.file_send_header(&mut buffer);
+    port.write(&mut buffer);
+    if !port.ack() { println!("Failed Ack @ write header"); }
+
+    //Reuse the buffer, drain the buffer containing the file and write it to the sd.else
+    //Currently, Serial buffer length on arduino is only 64 bytes
+    //Wait for an ack before continuing
+    //Function returns 0 when internal file buffer is finally empty
+    //TODO look into doing a do-while statement here so a final write all is not necessary?
+    while obj.drain_buffer(64, &mut buffer ) {
+        port.write_all(&mut buffer);
+        if !port.ack() {
+            println!("Failed Ack @ write buffer");
+        }
+    }
+    //must write it one more time with what was left of the buffer
+    port.write_all(&mut buffer);
+    if !port.ack() {
+        println!("Failed Ack @ Final buffer write");
+    }
+
+    println!("File should be written to sd...");
+}
+
+//TODO Set the password. Delete all files on SD if you are resetting it
+fn set_handler() {println!("Running set handler")}
+
+
 fn main() {
     println!("Hello, world!");
+
 // Use this to see what port it is on somehow
 //    let x = available_ports().unwrap();
 //
@@ -30,34 +81,37 @@ fn main() {
 //        println!("{}", i.port_name);
 //        println!("{:?}", i.port_type);
 //    }
-//
-    let mut port = serialport::open("COM3").unwrap();
-    port.write_data_terminal_ready(true);
 
-    let filename = String::from("pest.txt");
-    let password: String = String::from("password");
+    let args: Vec<String> = env::args().collect();
+    //TODO replace unwrap to state there needs to be input if it errors
+    let command = args.get(1).unwrap().to_uppercase();
 
-    let mut obj = Message::new(filename, password);
 
-    let mut buffer: Vec<u8> = Vec::new();
-
-    obj.file_send_header(&mut buffer);
-    port.write(&mut buffer);
-    if !port.ack()
-    {
-        println!("Failed Ack @ write header");
+    if command == String::from("SET") {
+        set_handler();
     }
-    while obj.drain_buffer(64, &mut buffer ) {
-        port.write_all(&mut buffer);
-        if !port.ack() {
-            println!("Failed Ack @ write buffer");
-        }
+    else if command == String::from("PUT") {
+        put_handler(args.get(2).unwrap().parse().unwrap());
     }
-    port.write_all(&mut buffer);
-    port.write_u8(END);
-    println!("File should be written to sd...");
+    else if command == String::from("GET") {
+        get_handler();
+    }
+}
 
+//TODO Once we have get functions working, these tests will put & get then compare the two
+//For right now, one must check the files manually on the SD card
+//cargo test -- --test-threads=1
+#[cfg(test)]
+mod tests {
+    use crate::put_handler;
 
+    #[test]
+    fn put_single_line_file() {
+        put_handler(String::from("single_line.txt"));
 
-
+    }
+    #[test]
+    fn put_multi_line_file() {
+        put_handler(String::from("multi_line.txt"));
+    }
 }
