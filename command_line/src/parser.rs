@@ -3,7 +3,7 @@ use std::io::{Write, Read};
 use std::fs::File;
 
 pub const ACK:        u8 = 1;
-pub const END:        u8 = 2;
+pub const ERROR:      u8 = 2;
 const SEND_FILE:      u8 = 3;
 const REQUEST_FILE:   u8 = 4;
 
